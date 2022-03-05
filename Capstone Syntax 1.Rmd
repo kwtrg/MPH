@@ -1,0 +1,316 @@
+---
+title: "Capstone Data Analysis 1"
+author: "Keanu Renne-Glover"
+date: "2/23/2021"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(readr)
+rawdata <- read_csv("COVID-19_Case_Surveillance_Public_Use_Data.csv")
+```
+
+```{r}
+#Cleaning raw dataset
+library(dplyr)
+library(naniar)
+#Specification for the selection of Child, Adolescent, and Young Adult Age Ranges in age_group variable
+
+cleandata1 <- rawdata%>%
+  #Selecting for all Laboratory-confirmed COVID-19 cases; removing Probable Cases 
+  filter(current_status == "Laboratory-confirmed case")%>%
+  mutate(age_group =  ifelse(age_group == "20 - 29 Years"| age_group == "30 - 39 Years"| age_group == "40 - 49 Years"| age_group == "50 - 59 Years"| age_group == "60 - 69 Years"| age_group == "70 - 79 Years"| age_group == "80+ Years", "20 - 80+ Years", age_group))%>%
+  #Removing disease and symptom onset timings
+  select(current_status, age_group, sex, race_ethnicity_combined, death_yn, medcond_yn, hosp_yn, icu_yn)%>%
+  #Recoding "Missing" observations as NA for all necessary categorical variables
+  replace_with_na(replace =
+                  list(
+                    age_group = "Missing",
+                    sex = "Missing",
+                    race_ethnicity_combined = "Missing",
+                    death_yn = "Missing",
+                    medcond_yn = "Missing",
+                    hosp_yn = "Missing",
+                    icu_yn = "Missing")
+                      )
+```
+
+
+```{r}
+#Missing data analysis examined with ff_glimpse
+#Checking the extent of the Missing Data
+library(finalfit)
+explanatory <- c("age_group", "sex", "race_ethnicity_combined", "medcond_yn", "hosp_yn", "icu_yn")
+dependent <- "death_yn"
+cleandata1%>%
+  filter(age_group == c("0 - 9 Years", "10 - 19 Years")) %>%
+  ff_glimpse(dependent, explanatory)
+cleandata1 %>%
+  summary_factorlist(dependent, explanatory, 
+  na_include=TRUE, p=TRUE)
+```
+```{r}
+#Looking for Patterns of Missingness
+#May not have enough info to know what/if bias introduced due to missing data
+library(naniar)
+library(finalfit)
+explanatory <- c("age_group", "sex", "race_ethnicity_combined", "medcond_yn", "hosp_yn", "icu_yn")
+dependent <- "death_yn"
+cleandata1%>%
+  missing_pattern(dependent, explanatory)
+#This allows us to look for patterns of missingness between variables. There are 6642945 patterns in this data. The number and pattern of missingness help to determine the likelihood of it being random rather than systematic.
+```
+```{r}
+#Checking for Associations between Observed and Missing Data
+library(GGally)
+library(naniar)
+library(finalfit)
+explanatory <- c("age_group", "sex", "race_ethnicity_combined", "medcond_yn", "hosp_yn", "icu_yn")
+dependent <- "death_yn"
+cleandata1%>%
+  missing_pairs(dependent, explanatory, position = "fill",)
+```
+
+```{r}
+#Confirmation of death_yn data Missing Completely At Random or Missing At Random (MAR)
+#comparisons between values of responders (Not missing) and non-responders (Missing) on the death_yn  variable.  c("age_group", "sex", "race_ethnicity_combined", "medcond_yn")
+library(GGally)
+library(naniar)
+library(finalfit)
+
+cleandata2 <- cleandata1%>%
+  filter(age_group == c("0 - 9 Years", "10 - 19 Years")) %>%
+  replace_with_na(replace =
+                  list(hosp_yn = "OTH"))
+
+
+explanatory <- c("age_group", "sex", "race_ethnicity_combined", "medcond_yn", "hosp_yn", "icu_yn")
+dependent <- "death_yn"
+cleandata2%>%
+  missing_compare(dependent, explanatory)%>%
+  knitr::kable(row.names=FALSE, align = c("l", "l","l", "r", "r", "r", "r"))
+#The significant p-values indicate that the missing data for all predictor variables are not missing completely at random (MCAR) in relation to the death_yn variable
+#NOT MISSING COMPLETELY AT RANDOM because of significant p-value; if missing at random, use multiple imputation for missing data up to 20% of the variable data (LATER...MAYBE, discussion); for large datasets, a server would be used from the school; ask advisor;
+
+#keep the unknown variable; r automatically, by default, drops incomplete cases 
+#the large dataset gives more power to detect a significant effect
+
+#Both the public use and restricted access datasets are created from the same data—the COVID-19 case
+#Jurisdictions then voluntarily notify CDC of COVID-19 cases using the National Notifiable Diseases Surveillance System (NNDSS).
+ 
+
+# glm(death_yn ~ medcod_yn + race + sex + agegroup, family = logit) #this will drop any NA values from all variables; compare this result to a subset where I have both death and medical condition variables to check if same results; subset would be using complete.cases verb stats or baser package. To see how R is operating Do sensitivity analysis on these two glm functions by taking a small chunk of data (first 100 observations - for learnign purposes to confirm R glm function eliminated NA values); 
+
+#Keep UNKOWN VARIABLES; treat unknown as another category in the analysis.Can subset to all completed observations for death and medcond variables with filter verb by the missing values. 
+```
+
+```{r}
+#Q1. Data cleaning
+
+cleandata2$age_groupF <- factor(cleandata2$age_group, levels = c("20 - 80+ Years", "0 - 9 Years", "10 - 19 Years"))
+
+cleandata2$medcond_ynF <- factor(cleandata2$medcond_yn,  levels =c("No", "Yes", "Unknown"))
+
+cleandata2$race_ethicity_combinedF <- factor(cleandata2$race_ethnicity_combined, levels =  c("White, Non-Hispanic","Black, Non-Hispanic", "Asian, Non-Hispanic", "Hispanic/Latino", "American Indian/Alaska Native, Non-Hispanic", "Native Hawaiian/Other Pacific Islander, Non-Hispanic","Multiple/Other, Non-Hispanic", "Unknown"))
+ 
+cleandata2$sexF <- factor(cleandata2$sex, levels = c("Female", "Male", "Unknown"))
+
+cleandata2$death_ynF <- factor(cleandata2$death_yn, levels = c("No", "Yes", "Unknown"))
+
+cleandata2$hosp_ynF <- factor(cleandata2$hosp_yn, levels = c("No", "Yes", "Unknown"))
+
+cleandata2$icu_ynF <- factor(cleandata2$icu_yn, levels = c("No", "Yes", "Unknown"))
+
+```
+
+```{r}
+cleandata2<- cleandata2%>%
+  filter(age_groupF == c("0 - 9 Years", "10 - 19 Years"))
+
+```
+
+
+```{r}
+#Colinearity Examination between Hospital and ICU admission in pediatric patients with postive COVID-19 diagnosis
+#Matrix Model
+library(pheatmap)
+colinearity<- model.matrix(~ hosp_ynF + icu_ynF, data=cleandata2)
+pheatmap::pheatmap(cor(colinearity[,-1]),
+                     color = colorRampPalette(c("#f0f0f0", "#bdbdbd", "#636363"))(100))
+```
+A correlated relationship seems to exist between "yes" for hospital admittance and "yes" for ICU admission. I am opting to use hospital admittance rather than ICU admission.
+
+
+Results
+```{r}
+#creating table 1
+library(tab)
+library(table1)
+library(tableone)
+library(Hmisc)
+
+#Vector variables for table 1
+myvars <- c("sexF", "race_ethicity_combinedF", "hosp_ynF", "medcond_ynF", "age_groupF")
+catvars <- c("sexF", "race_ethicity_combinedF", "hosp_ynF", "medcond_ynF", "age_groupF")
+
+#create table 1 object
+tab1 <- CreateTableOne(vars = myvars, strata = "death_ynF", data = cleandata2, factorVars = catvars)
+nonnormalvars <- c("medcond_ynF", "hosp_ynF")
+
+print(tab1, nonnormal = nonnormalvars, showAllLevels = TRUE, formatOptions = list(big.mark = ","))
+
+#medcond_F and hosp_f have large amounts of missingness, may be skewed - consider to be non-normal variables
+
+```
+```{r}
+table1data<-cleandata2%>%
+  select(-current_status, -age_group, -sex, -race_ethnicity_combined, -death_yn, -medcond_yn)
+
+# Repetitive labeling convention required for the table1 package + table used
+label(table1data$age_groupF) = "Age Group"
+label(table1data$medcond_ynF) = "Presence of Underlying Comorbidity/Disease"
+label(table1data$race_ethicity_combinedF) = "Race/Ethnicity" 
+label(table1data$sexF) = "Sex" 
+label(table1data$death_ynF) = "Death Status"
+
+table1(~age_groupF + race_ethicity_combinedF + medcond_ynF + death_ynF | sexF, data=table1data)
+```
+
+
+Table 1 shows the demographic and health status breakdown of the voluntarily reported COVID-19 infected individuals as of February 2021. A total of 17,007,859 individual-level laboratory-confirmed COVID-19 positive observations were included in the analysis, with 85.1% of individuals having ages between 20 years and over 80 years; the distribution between Females and Males within this age bracket was even with approximately 85.5% of Females and 84.8% of Males between the ages of 20 years and 80+ years. The most common race/ethnicity presented in the data were "Whites" with approximately 31.3% Females, 30.4% Males, and 30.7% of all individual observations. Hispanic/Latino" was the second most common reported race/ethnicity with approximately 11.1% Female and 11.3% Male, comprising 11.1% of overall observations; "Blacks, Non-Hispanic" was the third most common race/ethnicity comprising of approximately 7% of all individuals. Although 78.3% of the data regarding the presence of underlying comorbidities/conditions was missing, there was even distribution of the presence or lack of comorbidities between Females and Males with approximately 6.1% of Females and 6.0% of Males presenting with no comorbidities, and 6.5% of females and 6.0% of males having comorbidities or underlying illnesses.
+Lastly, although death status is missing 39.1% of all observations, approximately 49% of COVID-19 infected individuals survive their illness whereas 1.7% of COVID-19 infected individuals died of the disease. 
+
+Shown below are the results of the first of two binomial multivariate logistic regressions. Surveillance data was collected on the laboratory-confirmed COVID-19 positive individuals within the United States between the ages of 0 and 80+ years and grouped into the age cohorts "0-9", "10-19", and "20-80+" in order to distinguish between children, adolescents/young adults, and adults. The first model denotes the association between the death status outcome, the presence of underlying comorbidities, and the individual's age by age group, adjusting for both race/ethnicity and sex. The results of this analysis show that both children ages 0-9 years and adolescents/young adults aged 10-19 years have a log odds of death from COVID-19 illness of -0.762 and -0.511, respectively. This association for both age groups is statistically significant with p-values <2e-16; Thus indicating that, when compared to adults aged 20-80+ years, both children and adolescents/young adults have a lesser likelihood of dying from COVID-19 - this is consistent with the findings in current literature.   
+The presence of underlying conditions/comorbidities was also shown to be statically significant, p-value = <2e-16. Therefore, the log odds of death for an individual with a comorbidity or underlying illness is 1.85 times more likely than an individual without a comorbidity. 
+
+```{r}
+#Simple Logistic Regression for predictor variables sex, medcond, hosp, race/eth
+
+#SLR death~sex
+slr1 <- glm(death_ynF ~ sexF, data = cleandata2, family = "binomial")
+
+#SLR death~medcond
+slr2 <- glm(death_ynF ~ medcond_ynF, data = cleandata2, family = "binomial")
+
+#SLR death~hosp
+slr3 <- glm(death_ynF ~ hosp_ynF, data = cleandata2, family = "binomial")
+
+#SLR death~race/eth
+slr4 <- glm(death_ynF ~ race_ethicity_combinedF, data = cleandata2, family = "binomial")
+
+summary(slr1)
+summary(slr2)
+summary(slr3)
+summary(slr4)
+```
+```{r}
+exp(cbind(coef(slr1), confint(slr1)))
+exp(cbind(coef(slr2), confint(slr2)))
+exp(cbind(coef(slr3), confint(slr3)))
+exp(cbind(coef(slr4), confint(slr4)))
+```
+
+
+
+```{r}
+#Mediator Analysis: for hospital admissions status and comorbidity status
+#Baron&Kenney mediator method
+#Step1: 
+#SLR death~sex
+slr1 <- glm(death_ynF ~ sexF, data = cleandata2, family = "binomial")
+summary(slr1)
+
+#Step2
+#primary exposure to mediator (hospitalization status):
+med_hospmodel <- glm(hosp_ynF ~ sexF, data = cleandata2, family = "binomial")
+summary(med_hospmodel)
+
+#Baron&Kenney mediator method
+#primary exposure to mediator (comorbidity status):
+med_comorbmodel <- glm(medcond_ynF ~ sexF, data = cleandata2, family = "binomial")
+summary(med_comorbmodel)
+
+#Step3:
+bivariate_hospmodel <- glm(death_ynF ~ sexF + hosp_ynF, data = cleandata2, family = "binomial")
+summary(bivariate_hospmodel)
+
+bivariate_comorbmodel <- glm(death_ynF ~ sexF + medcond_ynF, data = cleandata2, family = "binomial")
+summary(bivariate_comorbmodel)
+```
+
+```{r}
+#Q: how does sex at birth affect likelihood of mortality in COVID019 positive pediatric + young adult patients, adjusting for race + comorbidity (confounder), hospitalization status (mediator), and comorbidity status (confounder). 
+model <- glm(death_ynF ~ sexF + race_ethicity_combinedF + medcond_ynF + hosp_ynF, data = cleandata1, family = "binomial")
+summary(model)
+```
+```{r}
+#Q: how does sex at birth affect likelihood of mortality in COVID019 positive pediatric + young adult patients, adjusting for race + comorbidity (confounder), hospitalization status (mediator), and comorbidity status (confounder). 
+model <- glm(death_ynF ~ sexF + race_ethicity_combinedF + medcond_ynF + hosp_ynF, data = cleandata1, family = "binomial")
+summary(model)
+```
+
+
+```{r}
+#Odds ratio estimate and confidence interval for multivariate model
+
+exp(cbind(coef(model), confint(model)))
+```
+
+```{r}
+#Interaction Analysis of effect measure modifiers
+#interaction terms = sex_F*Race , sex_F*Comorbidity
+model1 <- glm(death_ynF ~ sexF + race_ethicity_combinedF + medcond_ynF + hosp_ynF + sexF*race_ethicity_combinedF , data = cleandata2, family = "binomial")
+
+summary(model1)
+```
+No significant interaction was determined between Sex and Race or Sex and Comorbidity status. 
+
+
+
+
+
+
+```{r}
+
+# simple logistic regression to determine the crude association between age and death.
+
+fita <- glm(death_ynF ~ age_groupF, data = cleandata1, family = binomial("logit"))
+
+#simple logistic regression to determine the crude association between the presence of comorbidities and death. 
+fitb <- glm(death_ynF ~ medcond_ynF, data = cleandata1, family = binomial("logit"))
+
+#Q1. Generalized Multivariate Logistic Regression 
+#Does the presence of comorbidities affect the likelihood of mortality for COVID-19 positive children/adolescents and young adults as compared to COVID-19 positive adults, when adjusting for sex and race/ethnicity? 
+fit1 <- glm(death_ynF ~ age_groupF + medcond_ynF, data=cleandata1, family = binomial("logit"))
+summary(fita)
+summary(fitb)
+
+summary(fit1)
+```
+
+
+The second multivariate logistic model tests the associations between death, sex, race/ethnicity, and the presence of comorbidities for laboratory-confirmed COVID-19 positive children and adolescents/young adults, adjusting for age group. As shown in the results, despite the higher prevalence of Males contracting COVID-19, the log odds of Males dying from COVID-19 is -0.01473, p-value = 0.2904; thus, indicating no statistically significant difference in the likelihood of death from COVID-19 between Males and Females. When contrasted to individuals identified as "White", both non-Hispanic Blacks and non-Hispanic Asians were less likely to die of COVID-19 with statistically significant, p-value = <2e-16, log odds of -0.46321 and -0.34397, respectively. Hispanic/Latinos and non-Hispanic individuals of Multiple Race/Ethnicities showed a statiscally significant increased likelihood of death form COVID-19 with log odds 0.23903 and 0.64074, respectively. Non-Hispanic Asian Pacific Islander/Native Hawaiians and American Indian/Alaska Natives did not show statistically significant difference in their log odds when compared to Whites. Lastly, the presence of comorbidities resulted in a statistically significant log odds of 0.95070, indicating that, similarly to the first model, the presence of comorbidities in COVID-19 individuals results in an increased likelihood of dying from COVID-19 as compared to their counterparts without underlying conditions. 
+```{r}
+#Q2. Generalized Multivariate Logistic Regression 
+
+#MEN HAVE A HIGHER PREVALENCE OF COVID-19 INFECTION, SEVERE DISEASE AND DEATH WHEN COMPARED TO WOMEN. HOW DO SEX DIFFERENCES IN CHILDREN AND YOUNG ADULTS with comorbidities  AFFECT COVID-19 MORTALITY, adjusting for age?
+
+cleandata3 <- cleandata1%>%
+ filter(age_groupF == c("0 - 9 Years", "10 - 19 Years"))
+```
+
+```{r}
+fit2 <- glm(death_ynF ~ sexF + race_ethicity_combinedF + medcond_ynF, data=cleandata3, family = binomial("logit"))
+summary(fit2)
+```
+
+
+
+
+
